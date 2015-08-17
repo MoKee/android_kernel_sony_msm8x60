@@ -554,6 +554,11 @@ static int mdp_lut_hw_update(struct fb_cmap *cmap)
 	c[1] = cmap->blue;
 	c[2] = cmap->red;
 
+	if (cmap->start > MDP_HIST_LUT_SIZE || cmap->len > MDP_HIST_LUT_SIZE ||
+			(cmap->start + cmap->len > MDP_HIST_LUT_SIZE)) {
+		pr_err("mdp_lut_hw_update invalid arguments\n");
+		return -EINVAL;
+	}
 	for (i = 0; i < cmap->len; i++) {
 		if (copy_from_user(&r, cmap->red++, sizeof(r)) ||
 		    copy_from_user(&g, cmap->green++, sizeof(g)) ||
@@ -1140,7 +1145,7 @@ int mdp_histogram_stop(struct fb_info *info, uint32_t block)
 
 	mgmt->mdp_is_hist_start = FALSE;
 
-	if (!mfd->panel_power_on) {
+	if (mdp_fb_is_power_off(mfd)) {
 		if (mgmt->hist != NULL) {
 			mgmt->hist = NULL;
 			complete(&mgmt->mdp_hist_comp);
@@ -2370,6 +2375,11 @@ static int mdp_off(struct platform_device *pdev)
 	struct msm_fb_data_type *mfd = platform_get_drvdata(pdev);
 
 	pr_debug("%s:+\n", __func__);
+	if (mdp_fb_is_power_on_lp(mfd)) {
+		pr_debug("panel not turned off. keeping overlay on\n");
+		ret = panel_next_low_power_config(pdev, true);
+		return ret;
+	}
 	mdp_histogram_ctrl_all(FALSE);
 	atomic_set(&vsync_cntrl.suspend, 1);
 	atomic_set(&vsync_cntrl.vsync_resume, 0);
@@ -2416,6 +2426,10 @@ void mdp4_hw_init(void)
 
 static int mdp_bus_scale_restore_request(void);
 
+#if defined(CONFIG_MACH_APQ8064_MAKO) && defined(CONFIG_UPDATE_LCDC_LUT)
+extern int update_preset_lcdc_lut(void);
+#endif
+
 static int mdp_on(struct platform_device *pdev)
 {
 	int ret = 0;
@@ -2437,6 +2451,9 @@ static int mdp_on(struct platform_device *pdev)
 
 	if(mfd->index == 0)
 		mdp_iommu_max_map_size = mfd->max_map_size;
+
+	ret = panel_next_low_power_config(pdev, false);
+
 	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
 
 	ret = panel_next_on(pdev);
@@ -2486,6 +2503,9 @@ static int mdp_on(struct platform_device *pdev)
 
 	pr_debug("%s:-\n", __func__);
 
+#if defined(CONFIG_MACH_APQ8064_MAKO) && defined(CONFIG_UPDATE_LCDC_LUT)
+	update_preset_lcdc_lut();
+#endif
 	return ret;
 }
 

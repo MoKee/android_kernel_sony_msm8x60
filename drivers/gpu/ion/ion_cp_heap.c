@@ -28,6 +28,7 @@
 #include <linux/fmem.h>
 #include <linux/iommu.h>
 #include <linux/dma-mapping.h>
+#include <trace/events/kmem.h>
 
 #include <asm/mach/map.h>
 
@@ -141,8 +142,10 @@ static int allocate_heap_memory(struct ion_heap *heap)
 						&(cp_heap->handle),
 						0,
 						&attrs);
-		if (!cp_heap->cpu_addr)
+		if (!cp_heap->cpu_addr) {
+			trace_ion_cp_alloc_retry(tries);
 			msleep(20);
+		}
 	}
 
 	if (!cp_heap->cpu_addr)
@@ -775,7 +778,7 @@ int ion_cp_cache_ops(struct ion_heap *heap, struct ion_buffer *buffer,
 }
 
 static int ion_cp_print_debug(struct ion_heap *heap, struct seq_file *s,
-			      const struct rb_root *mem_map)
+			      const struct list_head *mem_map)
 {
 	unsigned long total_alloc;
 	unsigned long total_size;
@@ -805,16 +808,14 @@ static int ion_cp_print_debug(struct ion_heap *heap, struct seq_file *s,
 		unsigned long size = cp_heap->total_size;
 		unsigned long end = base+size;
 		unsigned long last_end = base;
-		struct rb_node *n;
+		struct mem_map_data *data;
 
 		seq_printf(s, "\nMemory Map\n");
 		seq_printf(s, "%16.s %14.s %14.s %14.s\n",
 			   "client", "start address", "end address",
 			   "size (hex)");
 
-		for (n = rb_first(mem_map); n; n = rb_next(n)) {
-			struct mem_map_data *data =
-					rb_entry(n, struct mem_map_data, node);
+		list_for_each_entry(data, mem_map, node) {
 			const char *client_name = "(null)";
 
 			if (last_end < data->addr) {
@@ -925,6 +926,7 @@ static int iommu_map_all(unsigned long domain_num, struct ion_cp_heap *cp_heap,
 		}
 		if (domain_num == cp_heap->iommu_2x_map_domain)
 			ret_value = msm_iommu_map_extra(domain, temp_iova,
+							cp_heap->base,
 							cp_heap->total_size,
 							SZ_64K, prot);
 		if (ret_value)
@@ -1017,8 +1019,9 @@ static int ion_cp_heap_map_iommu(struct ion_buffer *buffer,
 
 	if (extra) {
 		unsigned long extra_iova_addr = data->iova_addr + buffer->size;
-		ret = msm_iommu_map_extra(domain, extra_iova_addr, extra,
-					  SZ_4K, prot);
+		unsigned long phys_addr = sg_phys(buffer->sg_table->sgl);
+		ret = msm_iommu_map_extra(domain, extra_iova_addr, phys_addr,
+					extra, SZ_4K, prot);
 		if (ret)
 			goto out2;
 	}

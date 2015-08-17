@@ -2,7 +2,7 @@
  * drivers/gpu/ion/ion_carveout_heap.c
  *
  * Copyright (C) 2011 Google, Inc.
- * Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -322,7 +322,7 @@ int ion_carveout_cache_ops(struct ion_heap *heap, struct ion_buffer *buffer,
 }
 
 static int ion_carveout_print_debug(struct ion_heap *heap, struct seq_file *s,
-				    const struct rb_root *mem_map)
+				    const struct list_head *mem_map)
 {
 	struct ion_carveout_heap *carveout_heap =
 		container_of(heap, struct ion_carveout_heap, heap);
@@ -336,16 +336,14 @@ static int ion_carveout_print_debug(struct ion_heap *heap, struct seq_file *s,
 		unsigned long size = carveout_heap->total_size;
 		unsigned long end = base+size;
 		unsigned long last_end = base;
-		struct rb_node *n;
+		struct mem_map_data *data;
 
 		seq_printf(s, "\nMemory Map\n");
 		seq_printf(s, "%16.s %14.s %14.s %14.s\n",
 			   "client", "start address", "end address",
 			   "size (hex)");
 
-		for (n = rb_first(mem_map); n; n = rb_next(n)) {
-			struct mem_map_data *data =
-					rb_entry(n, struct mem_map_data, node);
+		list_for_each_entry(data, mem_map, node) {
 			const char *client_name = "(null)";
 
 			if (last_end < data->addr) {
@@ -429,8 +427,9 @@ int ion_carveout_heap_map_iommu(struct ion_buffer *buffer,
 
 	if (extra) {
 		unsigned long extra_iova_addr = data->iova_addr + buffer->size;
-		ret = msm_iommu_map_extra(domain, extra_iova_addr, extra,
-					  SZ_4K, prot);
+		unsigned long phys_addr = sg_phys(sglist);
+		ret = msm_iommu_map_extra(domain, extra_iova_addr, phys_addr,
+					extra, SZ_4K, prot);
 		if (ret)
 			goto out2;
 	}

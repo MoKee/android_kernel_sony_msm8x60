@@ -762,7 +762,7 @@ int sps_bam_pipe_connect(struct sps_pipe *bam_pipe,
 
 		/* Clear the data FIFO for debug */
 		if (map->data.base != NULL && bam_pipe->mode == SPS_MODE_SRC)
-			memset(map->data.base, 0, hw_params.data_size);
+			memset_io(map->data.base, 0, hw_params.data_size);
 
 		/* set NWD bit for BAM2BAM producer pipe */
 		if (bam_pipe->mode == SPS_MODE_SRC) {
@@ -807,7 +807,7 @@ int sps_bam_pipe_connect(struct sps_pipe *bam_pipe,
 	if (desc_buf != NULL)
 		if (bam_pipe->mode == SPS_MODE_SRC ||
 		    hw_params.mode == BAM_PIPE_MODE_SYSTEM)
-			memset(desc_buf, 0, hw_params.desc_size);
+			memset_io(desc_buf, 0, hw_params.desc_size);
 
 	bam_pipe->desc_size = hw_params.desc_size;
 	bam_pipe->num_descs = bam_pipe->desc_size / sizeof(struct sps_iovec);
@@ -918,10 +918,15 @@ int sps_bam_pipe_disconnect(struct sps_bam *dev, u32 pipe_index)
 		bam_pipe_exit(dev->base, pipe_index, dev->props.ee);
 		if (pipe->sys.desc_cache != NULL) {
 			u32 size = pipe->num_descs * sizeof(void *);
-			if (pipe->desc_size + size <= PAGE_SIZE)
-				kfree(pipe->sys.desc_cache);
-			else
+			if (pipe->desc_size + size <= PAGE_SIZE) {
+				if (dev->props.options & SPS_BAM_HOLD_MEM)
+					memset(pipe->sys.desc_cache, 0,
+						pipe->desc_size + size);
+				else
+					kfree(pipe->sys.desc_cache);
+			} else {
 				vfree(pipe->sys.desc_cache);
+			}
 			pipe->sys.desc_cache = NULL;
 		}
 		dev->pipes[pipe_index] = BAM_PIPE_UNASSIGNED;
